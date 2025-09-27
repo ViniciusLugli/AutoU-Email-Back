@@ -1,4 +1,6 @@
+import os
 from typing import AsyncGenerator
+from dotenv import load_dotenv
 from sqlmodel import SQLModel, Session
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
@@ -6,8 +8,9 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker
 )
 
+load_dotenv()
 
-DATABASE_URL = "postgresql+asyncpg://postgres:root@localhost/postgres"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
 
