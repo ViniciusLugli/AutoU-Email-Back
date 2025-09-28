@@ -24,6 +24,8 @@ class TextEntryCreateRequest(BaseModel):
     file_name: str
     
 class TextEntryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     user_id: int
     original_text: str
@@ -31,3 +33,9 @@ class TextEntryResponse(BaseModel):
     created_at: datetime
     generated_response: str
     file_name: str
+    
+class TokenResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    access_token: str
+    token_type: str = "bearer"
