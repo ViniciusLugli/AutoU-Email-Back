@@ -12,3 +12,7 @@ async def create_user(db: AsyncSession, user: User) -> User:
 async def get_users(db: AsyncSession) -> list[User]:
     result = await db.execute(select(User).options(selectinload(User.texts)))
     return result.scalars().all()
+
+async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
+    result = await db.execute(select(User).where(User.email == email))
+    return result.scalars().first()
