@@ -1,4 +1,13 @@
 import os
+import warnings
+from dotenv import load_dotenv
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*Accessing argon2.__version__ is deprecated.*",
+    category=DeprecationWarning,
+)
+
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
@@ -8,13 +17,18 @@ from app.db import get_session
 from app.crud import get_user_by_id
 from sqlalchemy.ext.asyncio import AsyncSession
 
+warnings.filterwarnings(
+    "ignore",
+    message=".*Accessing argon2.__version__ is deprecated.*",
+    category=DeprecationWarning,
+)
+
+load_dotenv()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
-
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
@@ -22,7 +36,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
-
 
 async def get_current_user(session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
     if not SECRET_KEY or not ALGORITHM:
