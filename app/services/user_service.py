@@ -16,7 +16,12 @@ async def register_user(session: AsyncSession, data: UserCreateRequest) -> User 
       hash_password=hash_pw
   )
   user = await create_user(session, db_user)
-  return UserResponse.from_orm(user)
+  return UserResponse(
+      id=user.id,
+      username=user.username,
+      email=user.email,
+      texts=[],
+  )
   
 async def authenticate_user(session: AsyncSession, data: UserLoginRequest) -> TokenResponse | None:
   user = await get_user_by_email(session, data.email)
@@ -24,4 +29,4 @@ async def authenticate_user(session: AsyncSession, data: UserLoginRequest) -> To
       return None
 
   token = create_access_token({"sub": str(user.id), "email": user.email})
-  return TokenResponse(access_token=token)
+  return TokenResponse(access_token=token, user_id=user.id)

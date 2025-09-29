@@ -10,6 +10,10 @@ class Category(str, enum.Enum):
   PRODUTIVO = "Produtivo"
   IMPRODUTIVO = "Improdutivo"
 
+class Status(str, enum.Enum):
+  PROCESSING = "Processando"
+  COMPLETED = "Concluído"
+  FAILED = "Falhou"
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str
@@ -27,6 +31,7 @@ class TextEntry(SQLModel, table=True):
     original_text: str
     category: Category
     generated_response: str
+    status: Status = Field(default=Status.PROCESSING, sa_column=Column(String, default=Status.PROCESSING.value))
 
     file_name: str = Field(default=None, sa_column=Column(String))
     file_path: str = Field(default=get_data_dir(), sa_column=Column(String))

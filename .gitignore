@@ -13,3 +13,4 @@ instance/
 .github
 data/
 .sql
+logs.txt
