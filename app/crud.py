@@ -26,6 +26,25 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> User | None:
     result = await db.execute(select(User).where(User.id == user_id))
     return result.scalars().first()
 
+async def update_user_by_id(db: AsyncSession, user_id: int, **kwargs) -> User | None:
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        return None
+    for key, value in kwargs.items():
+        setattr(user, key, value)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+async def delete_user_by_id(db: AsyncSession, user_id: int) -> bool:
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        return False
+    await db.delete(user)
+    await db.commit()
+    return True
+
 async def create_text_entry(db: AsyncSession, text_entry_req: TextEntryCreateRequest) -> TextEntry:
     te = TextEntry(
         user_id=text_entry_req.user_id,
@@ -40,14 +59,20 @@ async def create_text_entry(db: AsyncSession, text_entry_req: TextEntryCreateReq
     await db.refresh(te)
     return te
 
-
 async def get_texts_by_user(db: AsyncSession, user_id: int) -> list[TextEntry]:
     result = await db.execute(select(TextEntry).where(TextEntry.user_id == user_id))
     return result.scalars().all()
 
+async def delete_text_entry_by_id(db: AsyncSession, text_entry_id: int) -> bool:
+    result = await db.execute(select(TextEntry).where(TextEntry.id == text_entry_id))
+    text_entry = result.scalars().first()
+    if not text_entry:
+        return False
+    await db.delete(text_entry)
+    await db.commit()
+    return True
 
 def create_text_entry_sync(text_entry_req: TextEntryCreateRequest) -> TextEntry:
-    """Persist TextEntry de forma síncrona (para uso em workers Celery)."""
     te = TextEntry(
         user_id=text_entry_req.user_id,
         original_text=text_entry_req.original_text or "",
