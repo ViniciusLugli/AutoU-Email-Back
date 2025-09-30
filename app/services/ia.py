@@ -1,137 +1,142 @@
 import os
 import asyncio
+import json
+import logging
 from concurrent.futures import ProcessPoolExecutor
 from typing import Dict, Any, Optional
-import httpx
-
+import google.genai as genai
 from app.models import Category
 
-IA_API_URL = os.getenv("IA_API_URL")
-IA_API_KEY = os.getenv("IA_API_KEY")
-IA_TIMEOUT = float(os.getenv("IA_TIMEOUT", "30"))
+logger = logging.getLogger("app.services.ia")
 
-def _get_gemini_config():
-    return {
-        "url": os.getenv("GEMINI_API_URL"),
-        "key": os.getenv("GEMINI_API_KEY"),
-        "timeout": float(os.getenv("GEMINI_TIMEOUT", "10")),
-    }
+GENAI_API_KEY = os.getenv("GENAI_API_KEY")
+GENAI_MODEL = os.getenv("GENAI_MODEL", "gemma-3-1b-it")
 
-DEFAULT_CLASSIFIER_MODEL = os.getenv("HF_MODEL", "pierreguillou/bert-base-cased-sentiment")
-DEFAULT_GENERATOR_MODEL = os.getenv("HF_GEN_MODEL", "t5-small")
-HF_CONFIDENCE_THRESHOLD = float(os.getenv("HF_THRESHOLD", "0.5"))
-GEN_MAX_LENGTH = int(os.getenv("GEN_MAX_LENGTH", "128"))
-GEN_TEMPERATURE = float(os.getenv("GEN_TEMPERATURE", "0.7"))
-
-_infer_pipeline = None
-_generator_pipeline = None
-
-
-def _map_label_to_category(label: str, score: float) -> Category:
-    lab = (label or "").lower()
-    if score < HF_CONFIDENCE_THRESHOLD:
-        return Category.IMPRODUTIVO
-    if "produt" in lab or "positivo" in lab or "positive" in lab or lab.startswith("pos") or lab.endswith("_1"):
-        return Category.PRODUTIVO
-    return Category.IMPRODUTIVO
-
-
-def _build_generation_prompt(category: Category, email_text: str) -> str:
-    role = "responder com ação e próximos passos" if category is Category.PRODUTIVO else "responder brevemente e educadamente, sem solicitar ação imediata"
-    prompt = (
-        "Você é um assistente que gera respostas por e-mail.\n\n"
-        "Contexto: classificado como '{}'.\n\n"
-        "E-mail:\n"
-        "-----\n"
-        f"{email_text}\n"
-        "-----\n\n"
-        "Gere uma resposta apropriada seguindo este papel: {}. Seja específico, inclua perguntas relevantes e próximos passos quando apropriado. "
-        "Resposta em português, curta e profissional.".format(category.value, role)
-    )
-    return prompt
-
-
-def _ensure_classifier_loaded(model_name: str = DEFAULT_CLASSIFIER_MODEL):
-    global _infer_pipeline
-    if _infer_pipeline is None:
-        from transformers import pipeline
-
-        _infer_pipeline = pipeline("text-classification", model=model_name, truncation=True)
-    return _infer_pipeline
-
-
-def _ensure_generator_loaded(model_name: str = DEFAULT_GENERATOR_MODEL):
-    global _generator_pipeline
-    if _generator_pipeline is None:
-        from transformers import pipeline
-
-        try:
-            _generator_pipeline = pipeline("text2text-generation", model=model_name)
-        except Exception:
-            _generator_pipeline = pipeline("text-generation", model=model_name)
-    return _generator_pipeline
-
-
-def _generate_response(category: Category, email_text: str) -> str:
-    generator = _ensure_generator_loaded()
-    prompt = _build_generation_prompt(category, email_text)
+if GENAI_API_KEY:
     try:
-        out = generator(prompt, max_length=GEN_MAX_LENGTH, do_sample=True, temperature=GEN_TEMPERATURE, num_return_sequences=1)
-        text = out[0].get("generated_text") or out[0].get("summary_text") or out[0].get("text", "")
+        if hasattr(genai, "configure"):
+            genai.configure(api_key=GENAI_API_KEY)
+        else:
+            os.environ.setdefault("GOOGLE_API_KEY", GENAI_API_KEY)
     except Exception:
-        text = (
-            "[Erro ao gerar resposta automática] Sugestão: responda pedindo mais detalhes ou proponha próximos passos."
-        )
-    return text.strip()
-
-
-def _infer_sync_local(text: str) -> Dict[str, Any]:
-    # Local models removed. This function should not be called when Gemini-only is configured.
-    raise RuntimeError("local inference removed; configure GEMINI_API_URL to use external IA service")
+        pass
 
 
 def _call_external_api_sync(text: str) -> Optional[Dict[str, Any]]:
-    # Only Gemini API is supported now for sync inference
-    cfg = _get_gemini_config()
-    if not cfg.get("url"):
-        raise RuntimeError("Gemini API not configured: set GEMINI_API_URL to enable inference")
-    headers = {}
-    if cfg.get("key"):
-        headers["Authorization"] = f"Bearer {cfg.get('key')}"
+
+    genai_api_url = os.getenv("GENAI_API_URL")
+    if genai_api_url:
+        try:
+            import json as _json
+            from urllib.request import Request, urlopen
+            payload = _json.dumps({"task": "infer", "text": text}).encode("utf-8")
+            req = Request(genai_api_url, data=payload, method="POST", headers={"Content-Type": "application/json"})
+            with urlopen(req, timeout=10) as resp:
+                body = resp.read().decode("utf-8")
+                parsed = _json.loads(body)
+
+            cat = parsed.get("category")
+            conf = parsed.get("confidence")
+            gen = parsed.get("generated_response") or parsed.get("generated") or ""
+
+            return {
+                "category": cat,
+                "confidence": conf,
+                "generated_response": gen,
+            }
+        except Exception as exc:
+            logger.exception("Failed to call GENAI_API_URL mock: %s", exc)
+            raise RuntimeError(f"Failed to call GENAI_API_URL mock: {exc}") from exc
+
+    if not GENAI_API_KEY and not os.getenv("GENAI_API_URL"):
+        raise RuntimeError("GenAI API not configured: set GENAI_API_KEY or GENAI_API_URL for tests/mocks")
+    if not hasattr(genai, "Client"):
+        raise RuntimeError("google.genai client (genai.Client) is not available in this environment")
+
     try:
-        r = httpx.post(cfg.get("url"), json={"task": "infer", "text": text}, headers=headers, timeout=cfg.get("timeout"))
-        r.raise_for_status()
-        data = r.json()
-        cat_raw = data.get("category")
-        cat = Category(cat_raw) if cat_raw in (c.value for c in Category) else None
-        return {"category": cat, "confidence": float(data.get("confidence", 0.0)), "generated_response": data.get("generated_response", "")}
+        try:
+            from google.genai import types as genai_types
+        except Exception:
+            genai_types = None
+        client = genai.Client(api_key=GENAI_API_KEY)
+
+        if genai_types is not None:
+            contents = [
+                genai_types.Content(
+                    role="user",
+                    parts=[genai_types.Part.from_text(text=text)],
+                )
+            ]
+            config = genai_types.GenerateContentConfig()
+
+            if hasattr(client.models, "generate_content_stream"):
+                response_text = ""
+                for chunk in client.models.generate_content_stream(model=GENAI_MODEL, contents=contents, config=config):
+                    chunk_text = getattr(chunk, "text", None) or getattr(chunk, "delta", None) or str(chunk)
+                    response_text += str(chunk_text)
+            else:
+                resp = client.models.generate_content(model=GENAI_MODEL, contents=contents, config=config)
+                response_text = getattr(resp, "text", str(resp))
+        else:
+            resp = client.models.generate_content(model=GENAI_MODEL, contents=[{"role": "user", "content": [{"type": "text", "text": text}]}])
+            response_text = getattr(resp, "text", str(resp))
     except Exception as exc:
-        raise RuntimeError(f"Gemini IA API call failed: {exc}") from exc
+        logger.exception("genai.Client call failed: %s", exc)
+        raise RuntimeError(f"genai.Client call failed: {exc}") from exc
+
+    rt_upper = (response_text or "").upper()
+    if "PRODUTIVO" in rt_upper:
+        category = Category.PRODUTIVO
+        confidence = 0.8
+    elif "IMPRODUTIVO" in rt_upper:
+        category = Category.IMPRODUTIVO
+        confidence = 0.8
+    else:
+        category = Category.IMPRODUTIVO
+        confidence = 0.5
+
+    def _clean_sdk_artifacts(s: str) -> str:
+        if not s:
+            return s
+        import re
+
+        out = s
+        out = re.sub(r"sdk_http_response=HttpResponse\([^\)]*\)", "", out)
+        out = re.sub(r"candidates=\[.*?\]\s*", "", out, flags=re.DOTALL)
+        out = re.sub(r"usage_metadata=[^\n]*", "", out)
+        out = re.sub(r"parsed=[^,\n]*", "", out)
+        out = re.sub(r"\n{2,}", "\n\n", out)
+        return out.strip()
+
+    cleaned = _clean_sdk_artifacts(response_text)
+    lines = [l.strip() for l in (cleaned or "").split("\n") if l.strip()]
+    parsed_generated = None
+    if len(lines) >= 1 and lines[0].upper() in {"PRODUTIVO", "IMPRODUTIVO"}:
+        parsed_cat = lines[0].upper()
+        if parsed_cat == "PRODUTIVO":
+            category = Category.PRODUTIVO
+        else:
+            category = Category.IMPRODUTIVO
+        parsed_generated = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
+    else:
+        parsed_generated = cleaned.strip() if cleaned else ""
+
+    return {
+        "category": category,
+        "confidence": confidence,
+        "generated_response": parsed_generated or "",
+    }
 
 
 async def _call_external_api_async(text: str) -> Optional[Dict[str, Any]]:
-    # Only Gemini async endpoint supported
-    cfg = _get_gemini_config()
-    if not cfg.get("url"):
-        raise RuntimeError("Gemini API not configured: set GEMINI_API_URL to enable inference")
-    headers = {}
-    if cfg.get("key"):
-        headers["Authorization"] = f"Bearer {cfg.get('key')}"
     try:
-        async with httpx.AsyncClient(timeout=cfg.get("timeout")) as client:
-            r = await client.post(cfg.get("url"), json={"task": "infer", "text": text}, headers=headers)
-            r.raise_for_status()
-            data = r.json()
-            cat_raw = data.get("category")
-            cat = Category(cat_raw) if cat_raw in (c.value for c in Category) else None
-            return {"category": cat, "confidence": float(data.get("confidence", 0.0)), "generated_response": data.get("generated_response", "")}
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(_INFER_EXECUTOR, _call_external_api_sync, text)
     except Exception as exc:
-        raise RuntimeError(f"Gemini IA API async call failed: {exc}") from exc
+        raise RuntimeError(f"GenAI IA API async call failed: {exc}") from exc
 
 
 def infer_sync(text: str) -> Dict[str, Any]:
-    """Synchronous inference entrypoint. If IA_API_URL is set, call external API; otherwise run local model."""
-    # Use Gemini-only sync inference
     external = _call_external_api_sync(text)
     if external.get("category") is None:
         external["category"] = Category.IMPRODUTIVO
@@ -142,8 +147,8 @@ _INFER_EXECUTOR = ProcessPoolExecutor(max_workers=int(os.getenv("IA_ASYNC_WORKER
 
 
 async def infer_async(text: str) -> Dict[str, Any]:
-    """Async inference entrypoint. Prefer external async API when available, else run local in process pool."""
     external = await _call_external_api_async(text)
     if external.get("category") is None:
         external["category"] = Category.IMPRODUTIVO
     return external
+

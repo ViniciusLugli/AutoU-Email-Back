@@ -114,15 +114,15 @@ Desenvolver uma aplicação web simples que utilize IA para:
 - Example (form): `text=Olá, preciso atualizar o pedido #123`
 - Responses (possíveis):
 
-- 1) Tarefa enfileirada via Celery (modo assíncrono):
+- 1. Tarefa enfileirada via Celery (modo assíncrono):
 
 ```json
 { "task_id": "<celery-task-id>", "status": "queued" }
 ```
 
-  - Quando o projeto está configurado para usar Celery/Redis (variável `USE_CELERY=true` e `process_pipeline_task` disponível), a rota tenta enfileirar a tarefa e retorna um objeto simples com `task_id` e `status: queued`.
+- Quando o projeto está configurado para usar Celery/Redis (variável `USE_CELERY=true` e `process_pipeline_task` disponível), a rota tenta enfileirar a tarefa e retorna um objeto simples com `task_id` e `status: queued`.
 
-- 2) Fallback síncrono (quando o enqueue falha ou Celery não está ativo):
+- 2. Fallback síncrono (quando o enqueue falha ou Celery não está ativo):
 
 O endpoint tentará processar o conteúdo de forma síncrona usando `process_pipeline_sync`. Nesse caso há duas variantes:
 
