@@ -1,7 +1,5 @@
 # AutoU - Backend (FastAPI)
 
-## Resumo
-
 Este repositório contém o projeto que estou desenvolvendo como parte de um **teste técnico para a AutoU**. A solução é um backend em FastAPI que recebe emails (texto ou PDF/arquivo), aplica pré-processamento de NLP, classifica o e-mail como "Produtivo" ou "Improdutivo" usando modelos de IA e gera uma sugestão de resposta. O processamento pesado é enfileirado via Celery; resultados e histórico são armazenados em um banco relacional (SQLModel / PostgreSQL / SQLite em testes).
 
 Principais funcionalidades
@@ -114,13 +112,37 @@ Desenvolver uma aplicação web simples que utilize IA para:
   - `file` (UploadFile), ou
   - form field `text` (string)
 - Example (form): `text=Olá, preciso atualizar o pedido #123`
-- Response:
+- Responses (possíveis):
+
+- 1) Tarefa enfileirada via Celery (modo assíncrono):
 
 ```json
-{ "task_id": "task-abc", "status": "queued" }
+{ "task_id": "<celery-task-id>", "status": "queued" }
 ```
 
-> Observação: a rota enfileira uma tarefa Celery chamada `process_pipeline_task`.
+  - Quando o projeto está configurado para usar Celery/Redis (variável `USE_CELERY=true` e `process_pipeline_task` disponível), a rota tenta enfileirar a tarefa e retorna um objeto simples com `task_id` e `status: queued`.
+
+- 2) Fallback síncrono (quando o enqueue falha ou Celery não está ativo):
+
+O endpoint tentará processar o conteúdo de forma síncrona usando `process_pipeline_sync`. Nesse caso há duas variantes:
+
+- a) Se a função síncrona retornar um `id` que corresponde a um `TextEntry` no banco (registro criado), o endpoint retorna diretamente o objeto `TextEntry` (schema `TextEntryResponse`).
+
+- b) Caso contrário, o endpoint retorna um resumo com o status concluído e o resultado, no formato:
+
+```json
+{
+  "task_id": "sync",
+  "status": "completed",
+  "result": {
+    "id": <nullable-int>,
+    "category": "Produtivo" | "Improdutivo",
+    "generated_response": "..."
+  }
+}
+```
+
+Nota: em casos de erro interno a rota responde com HTTP 500 e um detalhe no body.
 
 ### 4) Listar textos do usuário
 
@@ -144,31 +166,6 @@ Fluxo resumido da task:
 4. Rodar `ia_service.infer_sync` para classificar e gerar resposta
 5. Atualizar `TextEntry` com `category`, `generated_response` e `status = COMPLETED` (ou `FAILED`)
 6. Deletar arquivo temporário (se aplicável)
-
-## Diagrama do processo
-
-```mermaid
-flowchart TD
-    A[Usuário] -->|Login/Cadastro| B[Frontend - React + Tailwind]
-    A -->|Envia texto ou PDF| B
-
-    B -->|Requisições HTTP| C[Backend - FastAPI]
-
-    C --> D[Autenticação - JWT]
-    D -->|Token JWT| B
-
-    C --> E[NLP - spaCy/pdfplumber]
-    E --> F[IA - Gemini (API) ou HF Transformers (local)]
-    F --> G[Categoria + Resposta sugerida]
-
-    C --> H[(PostgreSQL - Usuários e histórico)]
-    C --> I[(Redis - Cache de resultados)]
-
-    G --> C
-    C --> B
-    B -->|Exibe resultados| A
-
-```
 
 ## Como rodar localmente (rápido)
 
@@ -211,3 +208,24 @@ celery -A app.services.celery.celery worker --loglevel=info
 
 - `pytest -q` (os testes de integração usam `pytest-asyncio` e `httpx.ASGITransport`).
 - Os testes atuais cobrem autenticação, enfileiramento de tarefas e listagem de textos.
+
+## Variáveis de ambiente
+
+As variáveis abaixo são as mais relevantes para rodar o projeto localmente e em CI. Você pode colocar valores em um arquivo `.env` (não versionar o `.env`) ou exportar no ambiente.
+
+- `DATABASE_URL` - URL do banco (ex: `sqlite+aiosqlite:///./dev.db` ou `postgresql+asyncpg://user:pass@host/db`)
+- `SECRET_KEY` - Chave secreta usada para JWT (string forte)
+- `ALGORITHM` - Algoritmo do JWT (ex: `HS256`)
+- `ACCESS_TOKEN_EXPIRE_MINUTES` - Tempo de validade do token em minutos (ex: `60`)
+- `GENAI_API_KEY` - (opcional) Chave da API para `google.genai` — se estiver usando a API externa
+- `GENAI_API_URL` - (opcional) URL do mock/local GenAI para testes (o código aceita um mock HTTP para testes)
+- `GENAI_MODEL` - (opcional) Nome do modelo a ser usado pelo SDK (ex: `gemma-3-1b-it`)
+- `USE_CELERY` - `true`/`false` para habilitar uso de Celery (por padrão `false` em dev)
+- `CELERY_BROKER_URL` - Broker para Celery (ex: `redis://localhost:6379/1`)
+- `CELERY_RESULT_BACKEND` - Backend para resultados (ex: `redis://localhost:6379/2`)
+- `ALLOWED_ORIGINS` - Origens permitidas para CORS (vírgula-separadas)
+
+Exemplo rápido de uso com `.env`:
+
+1. Crie um arquivo `.env` localmente com as variáveis necessárias (não commitá-lo).
+2. Para testes locais você pode usar `GENAI_API_URL` apontando para o mock (ex: `http://127.0.0.1:9001/?mode=produtivo`).
