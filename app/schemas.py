@@ -29,7 +29,7 @@ class TextEntryResponse(BaseModel):
     id: int
     user_id: int
     status: str
-    original_text: str
+    original_text: str | None = None
     category: str
     created_at: datetime
     generated_response: str
@@ -43,8 +43,14 @@ class TokenResponse(BaseModel):
     user_id: int
 
 
+class ProcessResultResponse(BaseModel):
+    category: str
+    confidence: float | None = None
+    generated_response: str | None = None
+
 class TaskStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     task_id: str
     status: str
+    result: ProcessResultResponse | None = None

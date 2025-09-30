@@ -1,15 +1,10 @@
-import asyncio
 from http import HTTPStatus
 
 import pytest
 
 import os
-import sqlite3
 
 from app.services import tasks as tasks_module
-from app.models import Status, TextEntry
-from app.db import engine
-from sqlmodel import Session, select
 
 from app.tests.mocks.gemini_mock import start_mock
 
@@ -31,13 +26,14 @@ async def test_process_pipeline_task_e2e(monkeypatch, async_client, prepare_db, 
     assert token
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Start local Gemini mock server
+    # Start local GenAI mock server
     mock_thread = start_mock(port=9001)
     gemini_url = "http://127.0.0.1:9001/"
 
     # Run two scenarios: produtivo and improdutivo
     for mode, expect_category in (("produtivo", "Produtivo"), ("improdutivo", "Improdutivo")):
-        os.environ["GEMINI_API_URL"] = gemini_url + f"?mode={mode}"
+        # point the GenAI mock to the local mock server
+        os.environ["GENAI_API_URL"] = gemini_url + f"?mode={mode}"
 
         task_res = tasks_module.process_pipeline_task(None, text="Olá, preciso atualizar o pedido #123", user_id=user_id)
         assert isinstance(task_res, dict)
