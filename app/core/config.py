@@ -13,17 +13,14 @@ def get_data_dir() -> Path:
     return DATA_DIR
 
 class Settings:
-    # CORS Configuration
     ALLOWED_ORIGINS: List[str] = os.getenv(
-        "ALLOWED_ORIGINS", 
-        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+        "ALLOWED_ORIGINS",
     ).split(",")
     
     ALLOW_CREDENTIALS: bool = os.getenv("ALLOW_CREDENTIALS", "true").lower() == "true"
     ALLOWED_METHODS: List[str] = os.getenv("ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS").split(",")
     ALLOWED_HEADERS: List[str] = os.getenv("ALLOWED_HEADERS", "*").split(",")
     
-    # Celery/Redis Configuration  
-    USE_CELERY: bool = os.getenv("USE_CELERY", "false").lower() == "true"
+    USE_CELERY: bool = os.getenv("USE_CELERY", "true").lower() == "true"
 
 settings = Settings()

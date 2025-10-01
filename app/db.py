@@ -15,10 +15,8 @@ DATABASE_URL_SYNC = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://
 
 engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
 
-# Engine síncrono para uso com Celery/tarefas síncronas
 sync_engine = create_engine(DATABASE_URL_SYNC, echo=True, pool_pre_ping=True) if DATABASE_URL_SYNC else None
 
-# Adicionar sync_engine como atributo do engine principal para compatibilidade
 engine.sync_engine = sync_engine
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

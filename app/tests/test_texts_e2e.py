@@ -5,8 +5,7 @@ import pytest
 import os
 
 from app.services import tasks as tasks_module
-
-from app.tests.mocks.gemini_mock import start_mock
+from app.services import ia as ia_module
 
 
 @pytest.mark.asyncio
@@ -26,16 +25,20 @@ async def test_process_pipeline_task_e2e(monkeypatch, async_client, prepare_db, 
     assert token
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Start local GenAI mock server
-    mock_thread = start_mock(port=9001)
-    gemini_url = "http://127.0.0.1:9001/"
-
     # Run two scenarios: produtivo and improdutivo
     for mode, expect_category in (("produtivo", "Produtivo"), ("improdutivo", "Improdutivo")):
-        # point the GenAI mock to the local mock server
-        os.environ["GENAI_API_URL"] = gemini_url + f"?mode={mode}"
+        # Monkeypatch IA client to avoid network calls; infer_async returns the expected dict
+        async def _fake_infer_async(text, username=None):
+            if mode == "produtivo":
+                # emulate a productive response
+                return {"category": "Produtivo", "confidence": 0.95, "generated_response": "Posso atualizar o pedido #123 e confirmar os próximos passos. Você confirma?"}
+            else:
+                return {"category": "Improdutivo", "confidence": 0.2, "generated_response": "Recebemos sua mensagem. No momento não é possível realizar ação automática."}
 
-        task_res = tasks_module.process_pipeline_task(None, text="Olá, preciso atualizar o pedido #123", user_id=user_id)
+        monkeypatch.setattr(ia_module, "infer_async", _fake_infer_async)
+
+        # call the async pipeline directly in tests (no Celery worker here)
+        task_res = await tasks_module.process_pipeline_async(None, text="Olá, preciso atualizar o pedido #123", user_id=user_id)
         assert isinstance(task_res, dict)
         assert task_res.get("category") is not None
         assert task_res.get("generated_response") is not None
