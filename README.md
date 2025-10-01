@@ -1,175 +1,212 @@
 # AutoU - Backend (FastAPI)
 
-Este repositório contém o projeto que estou desenvolvendo como parte de um **teste técnico para a AutoU**. A solução é um backend em FastAPI que recebe emails (texto ou PDF/arquivo), aplica pré-processamento de NLP, classifica o e-mail como "Produtivo" ou "Improdutivo" usando modelos de IA e gera uma sugestão de resposta. O processamento pesado é enfileirado via Celery; resultados e histórico são armazenados em um banco relacional (SQLModel / PostgreSQL / SQLite em testes).
+Este repositório contém o backend FastAPI do desafio técnico. A API recebe e-mails (texto ou arquivo), aplica
+pré-processamento de NLP, classifica o conteúdo e gera uma sugestão de resposta automática. O processamento pesado
+é executado por um worker Celery (assíncrono); histórico e resultados são persistidos em um banco relacional via SQLModel.
 
-Principais funcionalidades
+Visão rápida
 
-- Receber texto ou upload de arquivo (PDF/txt) para processar um e-mail.
-- Pré-processamento de texto (remoção de stopwords, lematização, extração de keywords).
-- Classificação do texto em categorias (Produtivo / Improdutivo) via pipeline IA (Hugging Face local ou API externa).
-- Geração de sugestão de resposta (modelo de geração de texto ou fallback simples).
-- Persistência do histórico por usuário (TextEntry) com status (PROCESSING, COMPLETED, FAILED).
-- Autenticação via JWT (register/login) e rotas protegidas.
+- Endpoints protegidos por JWT para criar/consultar textos e gerenciar usuários
+- Pipeline assíncrono: upload/recebimento do texto → criação de TextEntry (PROCESSING) → Celery worker processa NLP + IA → update (COMPLETED/FAILED)
+- Geração de texto feita via cliente `google.genai` (SDK) — parâmetros controláveis por variáveis de ambiente
 
-## Tecnologias
+## Tecnologias utilizadas
 
 - Python 3.13
-
-## Sumário
-
-- Visão geral do projeto
-- Contexto do desafio (fornecido)
-- Objetivos esperados
-- Arquitetura e tecnologias
-- Rotas (endpoints) com exemplos de request/response
-- Diagrama do fluxo de processamento
-- Como rodar localmente
-- Notas e recomendações
-
-## Visão geral
-
-Este projeto é uma **API backend** que recebe emails (texto ou arquivo) e automatiza:
-
-1. Pré-processamento de texto (NLP)
-2. Classificação do email em categorias (Produtivo / Improdutivo)
-3. Geração de resposta automática sugerida
-4. Persistência do histórico e status do processamento
-
-O processamento pesado é enfileirado via Celery para que o endpoint responda rapidamente com um identificador de tarefa (`task_id`) enquanto o worker executa NLP + IA e atualiza o banco de dados.
-
-## Contexto do desafio (trecho oficial)
-
-Estamos criando uma solução digital para uma grande empresa do setor financeiro que lida com um alto volume de emails diariamente. Esses emails podem ser solicitações de status, uploads de arquivos, ou comunicações improdutivas.
-
-### Objetivo do desafio simplificado
-
-Desenvolver uma aplicação web simples que utilize IA para:
-
-- Classificar emails em categorias predefinidas (Produtivo / Improdutivo)
-- Gerar sugestões de resposta automática baseadas na classificação
-
-### Categorias
-
-- **Produtivo**: emails que exigem ação ou resposta específica
-- **Improdutivo**: emails que não exigem ação imediata
-
-## Arquitetura & Tecnologias
-
 - FastAPI (ASGI)
-- Python 3.13
-- SQLModel (por cima de SQLAlchemy)
-- Celery (worker) para processamento assíncrono
-- Redis (recomendado) como broker para Celery
-- Hugging Face Transformers (ou API externa) para classificação e geração
-- spaCy para pré-processamento (stopwords, lematização)
+- SQLModel (SQLAlchemy)
+- Alembic (migrations)
+- Celery (task queue)
+- Redis (recomendado) — broker e opcionalmente backend de resultados do Celery
+- google.genai (SDK) para geração de texto (LLM)
+- spaCy para pré-processamento de texto
 - pdfplumber para leitura de PDFs
-- pytest + pytest-asyncio + httpx para testes
+- pytest, pytest-asyncio e httpx para testes
+- Uvicorn para executar a aplicação ASGI
+- Docker (imagem fornecida via `Dockerfile` no repositório)
 
-### Componentes principais
+## Sumário do README
 
-- `app/main.py` — instancia o FastAPI e monta as rotas
-- `app/routes/*` — rotas: `auth`, `texts`, `users`, `health`
-- `app/services/*` — implementação da pipeline (nlp, ia, tasks, leitura de arquivo)
-- `app/models.py` — SQLModel: `User`, `TextEntry`
-- `app/crud.py` — operações DB (sync/async)
+- Endpoints (rotas) com exemplos de request/response e códigos de status
+- Como usar o Swagger UI (`/docs`) e a OpenAPI (`/openapi.json`)
+- Configuração local (variáveis de ambiente, banco, Celery)
+- Rodando com Docker
+- Testes e desenvolvimento
 
-## Rotas principais (exemplos)
+## Swagger UI (/docs)
 
-### 1) Registrar usuário
+O FastAPI expõe automaticamente a documentação interativa Swagger no endpoint `/docs` quando a aplicação está rodando.
+Abra `http://localhost:8000/docs` (ou a porta em que o Uvicorn estiver escutando) para ver todas as rotas, modelos de
+request/response, e testar endpoints diretamente do navegador.
+
+Também é disponibilizada a especificação OpenAPI em `/openapi.json`.
+
+## Endpoints e formatos (rotas atuais)
+
+Observação: muitos endpoints exigem autenticação Bearer (JWT). Os modelos Pydantic estão em `app/schemas.py` e os nomes
+de resposta usados abaixo referenciam essas classes.
+
+1. Registrar usuário
 
 - Método: POST
 - Endpoint: `/auth/register`
-- Body JSON:
+- Body (application/json):
 
 ```json
-{
-  "username": "string",
-  "email": "string@example.com",
-  "password": "senha"
-}
+{ "username": "string", "email": "string@example.com", "password": "senha" }
 ```
 
-- Response: `UserResponse` (sem senha)
+- Response: 200 OK
+- Response model: `UserResponse`
 
-### 2) Login
+2. Login
 
 - Método: POST
 - Endpoint: `/auth/login`
-- Body JSON:
+- Body (application/json):
 
 ```json
 { "email": "string@example.com", "password": "senha" }
 ```
 
-- Response: `{ "access_token": "...", "token_type": "bearer" }`
+- Response: 200 OK
+- Response model: `TokenResponse` — ex.:
 
-### 3) Processar e-mail
+```json
+{ "access_token": "<jwt>", "token_type": "bearer", "user_id": 1 }
+```
+
+3. Processar e-mail (enfileirar)
 
 - Método: POST
 - Endpoint: `/texts/processar_email`
 - Autenticação: Bearer token
-- Accepts (multipart/form-data):
-  - `file` (UploadFile), ou
-  - form field `text` (string)
-- Example (form): `text=Olá, preciso atualizar o pedido #123`
-- Responses (possíveis):
+- Content-Type: multipart/form-data
+- Form fields (uma das duas opções obrigatória):
 
-- 1. Tarefa enfileirada via Celery (modo assíncrono):
+  - `file` (UploadFile) — um PDF/txt anexo, ou
+  - `text` (string) — corpo do e-mail
+
+- Success response (quando a tarefa é enfileirada): 200 OK
 
 ```json
 { "task_id": "<celery-task-id>", "status": "queued" }
 ```
 
-- Quando o projeto está configurado para usar Celery/Redis (variável `USE_CELERY=true` e `process_pipeline_task` disponível), a rota tenta enfileirar a tarefa e retorna um objeto simples com `task_id` e `status: queued`.
+- Error responses:
+  - 400 Bad Request — quando `text` e `file` estão vazios
+  - 401 Unauthorized — quando o token está ausente/inválido
+  - 503 Service Unavailable — quando o enqueue para Celery falha
 
-- 2. Fallback síncrono (quando o enqueue falha ou Celery não está ativo):
+Notes:
 
-O endpoint tentará processar o conteúdo de forma síncrona usando `process_pipeline_sync`. Nesse caso há duas variantes:
+- A rota grava temporariamente o arquivo enviado em `data/` (ou pasta configurada) e passa o caminho ao worker Celery.
+- O worker atual executa `process_pipeline_async` (em `app/services/tasks.py`) que:
+  1. cria um `TextEntry` com status `PROCESSING`,
+  2. executa o pipeline de NLP + IA,
+  3. atualiza o registro com `category`, `generated_response` e `status = COMPLETED` (ou `FAILED`).
 
-- a) Se a função síncrona retornar um `id` que corresponde a um `TextEntry` no banco (registro criado), o endpoint retorna diretamente o objeto `TextEntry` (schema `TextEntryResponse`).
-
-- b) Caso contrário, o endpoint retorna um resumo com o status concluído e o resultado, no formato:
-
-```json
-{
-  "task_id": "sync",
-  "status": "completed",
-  "result": {
-    "id": <nullable-int>,
-    "category": "Produtivo" | "Improdutivo",
-    "generated_response": "..."
-  }
-}
-```
-
-Nota: em casos de erro interno a rota responde com HTTP 500 e um detalhe no body.
-
-### 4) Listar textos do usuário
+4. Listar textos do usuário
 
 - Método: GET
 - Endpoint: `/texts/`
 - Autenticação: Bearer token
-- Response: lista de objetos `TextEntry`
+- Response: 200 OK
+- Response model: list[`TextEntryResponse`]
 
-### 5) Listar usuários (protegido)
+Exemplo de `TextEntryResponse`:
+
+```json
+{
+  "id": 1,
+  "user_id": 1,
+  "status": "COMPLETED",
+  "original_text": "Olá, ...",
+  "category": "PRODUTIVO",
+  "created_at": "2025-09-28T12:34:56.789Z",
+  "generated_response": "Olá, obrigado...",
+  "file_name": null
+}
+```
+
+5. Deletar um texto
+
+- Método: DELETE
+- Endpoint: `/texts/{text_id}`
+- Autenticação: Bearer token
+- Success response: 204 No Content
+- Error: 404 Not Found — quando o `text_id` não existir ou for de outro usuário
+
+6. Listar usuários
 
 - Método: GET
 - Endpoint: `/users/`
+- Autenticação: Bearer token
+- Response: 200 OK
+- Response model: list[`UserResponse`]
 
-## Detalhes técnicos sobre `process_pipeline_task`
+7. Informações do usuário atual
 
-Fluxo resumido da task:
+- Método: GET
+- Endpoint: `/users/me`
+- Autenticação: Bearer token
+- Response: 200 OK
+- Response model: `UserResponse`
 
-1. Ler arquivo via `read_file_sync(file_path)` ou usar `text` enviado
-2. Criar registro `TextEntry` no DB com `status = PROCESSING`
-3. Rodar `nlp_service.preprocess_sync` para limpar e extrair features
-4. Rodar `ia_service.infer_sync` para classificar e gerar resposta
-5. Atualizar `TextEntry` com `category`, `generated_response` e `status = COMPLETED` (ou `FAILED`)
-6. Deletar arquivo temporário (se aplicável)
+8. Atualizar usuário atual
 
-## Como rodar localmente (rápido)
+- Método: PUT
+- Endpoint: `/users/me`
+- Autenticação: Bearer token
+- Query params (opcionais): `username`, `email`, `password`
+- Response: 200 OK — retorna `UserResponse` atualizado
 
-1. Instale dependências (venv recomendado):
+9. Deletar usuário atual
+
+- Método: DELETE
+- Endpoint: `/users/me`
+- Autenticação: Bearer token
+- Success response: 204 No Content
+
+10. Health (DB)
+
+- Método: GET
+- Endpoint: `/health/db`
+- Response: 200 OK
+- Exemplo de resposta:
+
+```json
+{ "db": true }
+```
+
+## Modelos / Schemas principais
+
+- `UserCreateRequest` — request para registrar
+- `UserResponse` — resp. com `id`, `username`, `email`, `texts`
+- `TextEntryCreateRequest` — interno para criar registros
+- `TextEntryResponse` — `id`, `user_id`, `status`, `original_text`, `category`, `created_at`, `generated_response`, `file_name`
+- `TokenResponse` — `access_token`, `token_type`, `user_id`
+- `ProcessResultResponse` — `category`, `confidence`, `generated_response`
+- `TaskStatusResponse` — `task_id`, `status`, `result` (opcional)
+
+## Variáveis de ambiente (essenciais)
+
+- `DATABASE_URL` — URL do banco (ex: `sqlite+aiosqlite:///./dev.db`)
+- `SECRET_KEY` — chave JWT
+- `ALGORITHM` — algoritmo JWT (ex: `HS256`)
+- `ACCESS_TOKEN_EXPIRE_MINUTES` — expiração do token (minutos)
+- `GENAI_API_KEY` — chave para `google.genai` (quando aplicável)
+- `GENAI_MODEL` — nome do modelo a usar (opcional)
+  -- `GENAI_MAX_OUTPUT_TOKENS` — limite de tokens de saída (ex: `2056`)
+  -- `GENAI_TEMPERATURE` — temperatura do gerador (ex: `0.0`)
+- `USE_CELERY` — `true`/`false` para habilitar enfileiramento (recomendado true em produção)
+- `CELERY_BROKER_URL` — ex: `redis://localhost:6379/1`
+- `CELERY_RESULT_BACKEND` — ex: `redis://localhost:6379/2`
+- `ALLOWED_ORIGINS` — CORS (vírgula separado)
+
+## Executando localmente (passos)
+
+1. Crie e ative um virtualenv e instale dependências:
 
 ```bash
 python -m venv venv
@@ -177,55 +214,64 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2. Variáveis de ambiente mínimas:
+2. Configure variáveis de ambiente (exemplo mínimo):
 
 ```bash
 export DATABASE_URL="sqlite+aiosqlite:///./dev.db"
 export SECRET_KEY="sua-secret-key"
-export ALGORITHM="HS256"
 export ACCESS_TOKEN_EXPIRE_MINUTES=60
+export USE_CELERY=false
 ```
 
-3. Inicialize DB (para SQLite a função `init_db()` já cria as tabelas):
+3. Inicialize banco (SQLite):
 
 ```bash
 python -c "from app.db import init_db; import asyncio; asyncio.run(init_db())"
 ```
 
-4. Rodar FastAPI (desenvolvimento):
+4. Rodar a API (desenvolvimento):
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8000
 ```
 
-5. Rodar Celery worker (opcional, para processamento assíncrono real):
+5. Rodar Celery worker (quando `USE_CELERY=true`):
 
 ```bash
 celery -A app.services.celery.celery worker --loglevel=info
 ```
 
+## Rodando com Docker
+
+- Há um `Dockerfile` no repositório para criar uma imagem que execute a API com Uvicorn. Em um ambiente com Docker instalado, crie a imagem e rode:
+
+```bash
+docker build -t autou-email-back .
+docker run -e DATABASE_URL="sqlite+aiosqlite:///./dev.db" -p 8000:8000 autou-email-back
+```
+
+Para orquestrar web + worker + redis, crie um `docker-compose.yml` com serviços `web`, `worker` e `redis` (opcional, não incluído por padrão).
+
 ## Testes
 
-- `pytest -q` (os testes de integração usam `pytest-asyncio` e `httpx.ASGITransport`).
-- Os testes atuais cobrem autenticação, enfileiramento de tarefas e listagem de textos.
+- Executar a suíte de testes:
 
-## Variáveis de ambiente
+```bash
+pytest -q
+```
 
-As variáveis abaixo são as mais relevantes para rodar o projeto localmente e em CI. Você pode colocar valores em um arquivo `.env` (não versionar o `.env`) ou exportar no ambiente.
+- Recomendações: os testes de integração usam `pytest-asyncio` e `httpx` para chamadas ASGI. Para evitar chamadas externas ao `google.genai` use `monkeypatch`/patch nas funções públicas (`app.services.ia.infer_async`) ou mock do cliente.
 
-- `DATABASE_URL` - URL do banco (ex: `sqlite+aiosqlite:///./dev.db` ou `postgresql+asyncpg://user:pass@host/db`)
-- `SECRET_KEY` - Chave secreta usada para JWT (string forte)
-- `ALGORITHM` - Algoritmo do JWT (ex: `HS256`)
-- `ACCESS_TOKEN_EXPIRE_MINUTES` - Tempo de validade do token em minutos (ex: `60`)
-- `GENAI_API_KEY` - (opcional) Chave da API para `google.genai` — se estiver usando a API externa
-- `GENAI_API_URL` - (opcional) URL do mock/local GenAI para testes (o código aceita um mock HTTP para testes)
-- `GENAI_MODEL` - (opcional) Nome do modelo a ser usado pelo SDK (ex: `gemma-3-1b-it`)
-- `USE_CELERY` - `true`/`false` para habilitar uso de Celery (por padrão `false` em dev)
-- `CELERY_BROKER_URL` - Broker para Celery (ex: `redis://localhost:6379/1`)
-- `CELERY_RESULT_BACKEND` - Backend para resultados (ex: `redis://localhost:6379/2`)
-- `ALLOWED_ORIGINS` - Origens permitidas para CORS (vírgula-separadas)
+## Debug & diagnóstico de geração (GenAI)
 
-Exemplo rápido de uso com `.env`:
+- Aumente `GENAI_MAX_OUTPUT_TOKENS` (ex.: 2056) se o modelo estiver cortando a saída.
 
-1. Crie um arquivo `.env` localmente com as variáveis necessárias (não commitá-lo).
-2. Para testes locais você pode usar `GENAI_API_URL` apontando para o mock (ex: `http://127.0.0.1:9001/?mode=produtivo`).
+Observação: o projeto não persiste respostas brutas dos modelos em disco por motivos de segurança e privacidade. Para diagnóstico mais profundo, capture os logs do worker Celery em modo debug e compartilhe trechos relevantes (sem dados sensíveis).
+
+## Observações e boas práticas
+
+- Não coloque o `.env` no repositório. Use variáveis de ambiente em produção.
+- Em produção execute workers Celery separados do processo web e utilize Redis como broker.
+- Para evoluir: incluir uma rota para consultar o status/result de uma task pelo `task_id` (atualmente a consulta é feita através dos registros `TextEntry`).
+
+---

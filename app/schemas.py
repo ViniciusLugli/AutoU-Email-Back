@@ -30,9 +30,9 @@ class TextEntryResponse(BaseModel):
     user_id: int
     status: str
     original_text: str | None = None
-    category: str
+    category: str | None = None
     created_at: datetime
-    generated_response: str
+    generated_response: str | None = None
     file_name: str | None = None
     
 class TokenResponse(BaseModel):
