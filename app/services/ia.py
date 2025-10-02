@@ -1,13 +1,10 @@
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import google.genai as genai
-from datetime import datetime
 from app.models import Category
-
-GENAI_API_KEY = os.getenv("GENAI_API_KEY")
-GENAI_MODEL = os.getenv("GENAI_MODEL", "gemma-3-1b-it")
+from app.core.constants import GENAI_API_KEY, GENAI_MAX_OUTPUT_TOKENS, GENAI_MODEL, GENAI_TEMPERATURE, IA_ASYNC_WORKERS
 
 if GENAI_API_KEY:
     try:
@@ -39,9 +36,7 @@ def _call_genai_blocking(prompt: str) -> str:
                     parts=[genai_types.Part.from_text(text=prompt)],
                 )
             ]
-            max_tokens = int(os.getenv("GENAI_MAX_OUTPUT_TOKENS", "2056"))
-            temperature = float(os.getenv("GENAI_TEMPERATURE", "0.0"))
-            config = genai_types.GenerateContentConfig(max_output_tokens=max_tokens, temperature=temperature)
+            config = genai_types.GenerateContentConfig(max_output_tokens=GENAI_MAX_OUTPUT_TOKENS, temperature=GENAI_TEMPERATURE)
 
             if hasattr(client.models, "generate_content_stream"):
                 response_text = ""
@@ -57,13 +52,11 @@ def _call_genai_blocking(prompt: str) -> str:
                 resp = client.models.generate_content(model=GENAI_MODEL, contents=contents, config=config)
                 response_text = getattr(resp, "text", str(resp))
         else:
-            max_tokens = int(os.getenv("GENAI_MAX_OUTPUT_TOKENS", "2056"))
-            temperature = float(os.getenv("GENAI_TEMPERATURE", "0.0"))
             resp = client.models.generate_content(
                 model=GENAI_MODEL,
                 contents=[{"role": "user", "content": [{"type": "text", "text": prompt}]}],
-                max_output_tokens=max_tokens if hasattr(client.models, "generate_content") else None,
-                temperature=temperature if hasattr(client.models, "generate_content") else None,
+                max_output_tokens=GENAI_MAX_OUTPUT_TOKENS if hasattr(client.models, "generate_content") else None,
+                temperature=GENAI_TEMPERATURE if hasattr(client.models, "generate_content") else None,
             )
             response_text = getattr(resp, "text", str(resp))
     except Exception as exc:
@@ -112,73 +105,71 @@ def _clean_sdk_artifacts(s: str) -> str:
 
     return out
 
-
-
 def build_prompt(text: str, username: str | None = None) -> str:
     examples = [
         {
-            "email": "Prezada equipe,\n\nFinalizei o relatório mensal e já o subi na pasta \\Relatórios_2025\\.\nA reunião de alinhamento será terça-feira às 10h.\r\nPor favor, revisem antes.\n\nAtenciosamente,\nCarlos",
+            "email": "Prezada equipe,\n\nFinalizei o relatório trimestral de desempenho e já o disponibilizei na pasta compartilhada: \\\\Servidor\\Projetos\\Relatorios\\2025_Q1\\.\nAlém do relatório em PDF, incluí também uma planilha em Excel com os indicadores detalhados por área (financeiro, comercial e operacional).\r\n\r\nMarquei a reunião de revisão para quarta-feira, dia 15/10, às 14h, via Microsoft Teams. O link já está no calendário, mas segue aqui também: https://teams.microsoft.com/l/meetup-join/123.\n\nPeço que todos leiam os tópicos 3.2 e 4.1 do relatório antes da reunião, pois serão foco de discussão.\n\nAtenciosamente,\nCarlos",
             "category": "PRODUTIVO",
-            "reason": "O email contém informações de trabalho claras: entrega de relatório e marcação de reunião.",
-            "suggested_response": "Obrigado, Carlos! Vamos revisar o relatório antes da reunião.\nAté terça-feira."
+            "reason": "O email contém entrega de relatórios, anexos em formatos diferentes, local de armazenamento, link de reunião e instruções claras para preparação.",
+            "suggested_response": "Olá Carlos,\n\nObrigado pelo envio do relatório trimestral e da planilha detalhada. Já acessamos os arquivos na pasta compartilhada (\\\\Servidor\\Projetos\\Relatorios\\2025_Q1\\).\n\nVamos revisar especialmente os tópicos 3.2 e 4.1 antes da reunião de quarta-feira (15/10 às 14h).\n\nAté lá,\nEquipe"
         },
         {
-            "email": "Oi pessoal,\n\nVocês viram aquele vídeo engraçado que mandei no grupo? kkkkk\nE aí, sexta vai ter happy hour ou não?\n\nAbraços,\nJoão",
-            "category": "IMPRODUTIVO",
-            "reason": "O email trata apenas de assuntos pessoais e piadas, sem relação com trabalho.",
-            "suggested_response": "Oi João, vamos focar os emails apenas em questões do trabalho.\nSobre o happy hour, podemos falar no grupo do WhatsApp. :)"
-        },
-        {
-            "email": "Bom dia,\n\nEnviei a planilha de custos atualizada.\r\nEstá em: C:\\Projetos\\Financeiro\\2025\\.\nVerifiquem antes da reunião de orçamento.\n\nAbs,\nFernanda",
+            "email": "Bom dia,\n\nEnviei a versão final do contrato com o cliente XYZ. O documento foi salvo em: C:\\Users\\Public\\Documentos\\Contratos\\XYZ_Final.pdf\n\nSolicito que a equipe jurídica faça a revisão até amanhã, 29/09, para que possamos enviar ao cliente ainda dentro do prazo.\r\n\r\nAlém disso, precisamos que o time de finanças valide os valores da cláusula 5.3 (ajustes de pagamento).\n\nAbraços,\nFernanda",
             "category": "PRODUTIVO",
-            "reason": "Email contém envio de documento importante e solicitação de revisão.",
-            "suggested_response": "Obrigado, Fernanda! Já recebemos a planilha.\nVamos revisar antes da reunião."
+            "reason": "O email trata de contrato, prazos de revisão e validação de cláusulas financeiras.",
+            "suggested_response": "Bom dia Fernanda,\n\nRecebemos o contrato salvo em C:\\Users\\Public\\Documentos\\Contratos\\XYZ_Final.pdf.\n\nA equipe jurídica vai revisar os pontos legais até amanhã (29/09) e o financeiro validará os valores da cláusula 5.3.\n\nTe daremos retorno antes do prazo.\n\nAbs,\nEquipe"
         },
         {
-            "email": "Oi,\n\nEstava pensando... vocês acham que a nova temporada da série X ficou boa?\nPodemos conversar no café mais tarde!\n\nBeijos,\nLuiza",
-            "category": "IMPRODUTIVO",
-            "reason": "O conteúdo não tem relação com atividades de trabalho, apenas lazer.",
-            "suggested_response": "Oi Luiza! Vamos manter os emails apenas para trabalho.\nPodemos falar da série no café sim. :)"
-        },
-        {
-            "email": "Equipe,\n\nPrecisamos enviar o material para o cliente até amanhã às 17h.\nJá organizei os arquivos no Google Drive: https://drive.google.com/projeto2025.\n\n[]s,\nRafael",
+            "email": "Prezados,\n\nO cronograma atualizado do projeto Ômega já está disponível em: /mnt/projetos/omega/cronograma_v2.xlsx\n\nAs principais mudanças:\n- Entrega do módulo de autenticação adiada para 20/10.\n- Inclusão de uma nova etapa de testes de integração entre 22/10 e 25/10.\r\n- Ajustes nas dependências do módulo de relatórios.\n\nPor favor, confirmem se todos os responsáveis estão de acordo com as novas datas.\n\nObrigado,\nMariana",
             "category": "PRODUTIVO",
-            "reason": "O email define prazo e organiza entrega de material para cliente.",
-            "suggested_response": "Obrigado, Rafael!\nVamos garantir que tudo esteja pronto e validado até amanhã às 17h."
+            "reason": "O email comunica mudanças relevantes no cronograma e pede validação da equipe.",
+            "suggested_response": "Oi Mariana,\n\nObrigado pelo envio do cronograma atualizado em /mnt/projetos/omega/cronograma_v2.xlsx.\n\nJá verificamos as mudanças: entrega do módulo de autenticação (20/10), etapa de testes de integração (22/10-25/10) e ajustes no módulo de relatórios.\n\nNossa equipe confirma que está de acordo com as novas datas.\n\nAtenciosamente,\nEquipe"
         },
         {
-            "email": "Gente,\n\nOlhem esse meme:\nhttps://imgur.com/123abc 😂😂😂\n\nkkkkkk\n\nAbraços,\nPedro",
-            "category": "IMPRODUTIVO",
-            "reason": "Conteúdo de humor sem valor profissional, apenas distração.",
-            "suggested_response": "Oi Pedro, vamos deixar memes para grupos informais.\nAqui no email precisamos focar em demandas de trabalho."
-        },
-        {
-            "email": "Prezados,\n\nO cronograma atualizado do projeto Alfa já está disponível.\nLocal: /mnt/projetos/alfa/cronograma.xlsx\n\nPeço que confirmem se todos os prazos estão corretos.\n\nObrigado,\nMariana",
+            "email": "Boa tarde,\n\nAnexei o documento Indicadores_Q2.pdf com os resultados de desempenho do segundo trimestre.\nPrincipais pontos a observar:\r\n1) Crescimento de 12% no setor comercial.\n2) Redução de custos operacionais em 8%.\n3) Atraso na entrega de dois projetos (detalhes no anexo).\n\nSolicito que cada gestor prepare comentários sobre os indicadores de sua área para a reunião de sexta-feira, às 11h.\n\nAbraços,\nBeatriz",
             "category": "PRODUTIVO",
-            "reason": "Atualização de cronograma é informação relevante e necessária para andamento do projeto.",
-            "suggested_response": "Obrigado, Mariana!\nVamos revisar os prazos e dar retorno ainda hoje."
+            "reason": "O email contém indicadores de desempenho e solicita análise da equipe antes da reunião.",
+            "suggested_response": "Boa tarde Beatriz,\n\nObrigado pelo envio do documento Indicadores_Q2.pdf.\n\nJá notamos os principais pontos: crescimento comercial (12%), redução de custos operacionais (8%) e atrasos em dois projetos.\n\nCada gestor vai preparar os comentários de sua área antes da reunião de sexta-feira às 11h.\n\nAbs,\nEquipe"
         },
         {
-            "email": "Fala galera,\n\nVamos pedir pizza hoje no almoço?\nQual sabor vcs querem? 🍕\n\nAbs,\nThiago",
-            "category": "IMPRODUTIVO",
-            "reason": "Email informal sobre almoço, não relacionado ao trabalho.",
-            "suggested_response": "Oi Thiago, bora combinar isso pessoalmente.\nNo email, vamos focar nas demandas do projeto. :)"
-        },
-        {
-            "email": "Boa tarde,\n\nAnexei o documento com os indicadores de desempenho (KPI) do último trimestre.\nEle está em PDF, nome: Indicadores_Q3.pdf\n\nAtenciosamente,\nBeatriz",
+            "email": "Equipe,\n\nLembrando que o material para a apresentação do cliente XPTO deve ser finalizado até quinta-feira (02/10), às 18h.\nO conteúdo parcial está salvo no Google Drive: https://drive.google.com/projetoXPTO.\r\n\r\nAinda faltam os slides de resultados financeiros e o gráfico de tendências.\n\nPeço que cada responsável atualize sua parte até quarta-feira, para termos um dia de folga para revisão final.\n\n[]s,\nRafael",
             "category": "PRODUTIVO",
-            "reason": "O email fornece dados de desempenho que fazem parte do acompanhamento do trabalho.",
-            "suggested_response": "Obrigado, Beatriz!\nDocumento recebido.\nVamos analisar os indicadores e discutir na próxima reunião."
+            "reason": "O email define prazos claros, aponta pendências e reforça a importância da entrega antecipada para revisão.",
+            "suggested_response": "Oi Rafael,\n\nObrigado pelo lembrete. Já acessamos o material no Google Drive (https://drive.google.com/projetoXPTO).\n\nCada responsável vai atualizar sua parte até quarta-feira, incluindo os slides de resultados financeiros e o gráfico de tendências.\n\nAssim teremos tempo de sobra para a revisão final na quinta.\n\n[]s,\nEquipe"
         },
         {
-            "email": "Oi,\n\nAlguém sabe se sexta é feriado mesmo? Não quero vir à toa kkkkk\n\nValeu,\nAndré",
+            "email": "Oi pessoal,\n\nVocês acreditam que esqueci a marmita em casa hoje? kkkkk\nAlguém topa pedir hambúrguer comigo no almoço?\n\nValeu,\nJoão",
             "category": "IMPRODUTIVO",
-            "reason": "Pergunta informal que poderia ser resolvida em calendário oficial ou grupo informal.",
-            "suggested_response": "Oi André, confira no calendário oficial da empresa para confirmar.\nAssim garantimos que todos estejam alinhados."
+            "reason": "Assunto pessoal, sem relação com o trabalho.",
+            "suggested_response": "Oi João,\nVamos combinar o almoço pessoalmente.\nNo email, seguimos focando nos temas de trabalho. :)"
+        },
+        {
+            "email": "Gente,\n\nOlhem esse vídeo hilário que encontrei:\nhttps://youtu.be/123xyz 😂😂😂\n\nNão consigo parar de rir kkkk\n\nAbraços,\nPedro",
+            "category": "IMPRODUTIVO",
+            "reason": "Compartilhamento de entretenimento sem relevância profissional.",
+            "suggested_response": "Oi Pedro,\nEsse tipo de conteúdo é melhor nos grupos informais.\nVamos manter o email apenas para trabalho."
+        },
+        {
+            "email": "Oi,\n\nVocês viram a nova temporada daquela série que todo mundo acompanha? Achei o final meio forçado rsrs\n\nPodemos comentar no café da tarde!\n\nBjs,\nLuiza",
+            "category": "IMPRODUTIVO",
+            "reason": "Discussão de série de TV não tem relação com tarefas ou entregas.",
+            "suggested_response": "Oi Luiza,\nCombinado, falamos da série no café.\nPor aqui seguimos só com os assuntos de trabalho. :)"
+        },
+        {
+            "email": "Fala galera,\n\nBora pedir pizza na sexta? Quais sabores vcs curtem mais? 🍕\n\nAbs,\nThiago",
+            "category": "IMPRODUTIVO",
+            "reason": "Assunto de refeição, informal e sem relação com demandas da equipe.",
+            "suggested_response": "Oi Thiago,\nMelhor alinharmos esse tipo de coisa pessoalmente.\nNo email seguimos só com trabalho."
+        },
+        {
+            "email": "Oi,\n\nAlguém sabe se segunda é feriado municipal mesmo? Não queria vir à toa kkkkk\n\nValeu,\nAndré",
+            "category": "IMPRODUTIVO",
+            "reason": "Informação facilmente obtida em calendário oficial, não precisa ser discutida por email corporativo.",
+            "suggested_response": "Oi André,\nConfirma no calendário oficial da empresa para ter certeza.\nAssim todos ficam alinhados."
         }
     ]
 
-    username_line = f"Usuário: {username}\n" if username else ""
+    username_line = f"Nome do usuario: {username}\n" if username else ""
 
     instructions = (
         "INSTRUÇÕES (OBRIGATÓRIO): Você é um assistente que analisa e classifica e-mails em duas categorias: PRODUTIVO ou IMPRODUTIVO.\n"
@@ -200,6 +191,8 @@ def build_prompt(text: str, username: str | None = None) -> str:
         "Exemplo positivo (CORRETO):\n"
         "Texto original: 'Finalizei o relatório e marquei reunião.'\n"
         "Resposta correta: 'Obrigado pelo envio do relatório. Vou revisar e estarei presente na reunião.'\n"
+        "- Leia o email com atenção para descobrir quem é o remetente e use o nome do usuário para assinar a resposta.\n"
+        "- Leia o texto do email cuidadosamente para entender o contexto e detalhes importantes.\n"
         "- Utilize os exemplos abaixo para entender o estilo e formatação da resposta desejados.\n"
     )
 
@@ -220,7 +213,7 @@ def build_prompt(text: str, username: str | None = None) -> str:
     return prompt
 
 
-_INFER_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("IA_ASYNC_WORKERS", "1")))
+_INFER_EXECUTOR = ThreadPoolExecutor(max_workers=IA_ASYNC_WORKERS)
 
 
 async def infer_async(text: str, username: str | None = None) -> Dict[str, Any]:

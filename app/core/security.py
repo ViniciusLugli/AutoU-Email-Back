@@ -1,6 +1,5 @@
-import os
 import warnings
-from dotenv import load_dotenv
+from app.core.constants import SECRET_KEY, ALGORITHM
 
 warnings.filterwarnings(
     "ignore",
@@ -23,19 +22,27 @@ warnings.filterwarnings(
     category=DeprecationWarning,
 )
 
-load_dotenv()
-
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 def hash_password(password: str) -> str:
+    if not password:
+        raise ValueError("Password must not be empty")
+    
+    if password.isspace():
+        raise ValueError("Password must not be only whitespace")
+
+    if " " in password:
+        raise ValueError("Password must not contain spaces")
+
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
 
 async def get_current_user(session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
     if not SECRET_KEY or not ALGORITHM:

@@ -2,9 +2,7 @@ import os
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from typing import Dict
-
-DEFAULT_SPACY_MODEL = os.getenv("DEFAULT_SPACY_MODEL", "pt_core_news_sm")
-NLP_WORKERS = int(os.getenv("NLP_WORKERS", "2"))
+from app.core.constants import NLP_WORKERS
 
 _nlp = None
 

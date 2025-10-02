@@ -1,6 +1,7 @@
 from celery import Celery
 import os
 from pathlib import Path
+from app.core.constants import CELERY_BROKER_URL, CELERY_RESULT_BACKEND
 
 DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 if DOTENV_PATH.exists():
@@ -19,10 +20,7 @@ if DOTENV_PATH.exists():
     except Exception:
         pass
 
-CELERY_BROKER = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
-CELERY_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
-
-celery = Celery("autou", broker=CELERY_BROKER, backend=CELERY_BACKEND)
+celery = Celery("autou", broker=CELERY_BROKER_URL, backend=CELERY_RESULT_BACKEND)
 
 celery.conf.update(
     task_serializer="json",

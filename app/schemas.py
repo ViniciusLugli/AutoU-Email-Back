@@ -10,6 +10,12 @@ class UserLoginRequest(BaseModel):
     email: str
     password: str
     
+class UserUpdateRequest(BaseModel):
+    username: str | None = None
+    email: str | None = None
+    current_password: str | None = None
+    new_password: str | None = None
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
