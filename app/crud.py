@@ -8,7 +8,6 @@ from app.db import async_session
 from sqlmodel import Session
 from app.schemas import TextEntryCreateRequest, UserUpdateRequest
 from app.models import Status
-from sqlalchemy import update as sa_update
 
 """
     FUNÇÕES PARA USER
@@ -29,7 +28,7 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     return result.scalars().first()
 
 async def get_user_by_id(db: AsyncSession, user_id: int) -> User | None:
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User).options(selectinload(User.texts)).where(User.id == user_id))
     return result.scalars().first()
 
 async def update_current_user(db: AsyncSession, user_update: UserUpdateRequest, current_user: User) -> User | None:

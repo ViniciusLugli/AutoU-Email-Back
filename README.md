@@ -19,9 +19,8 @@ Visão rápida
 - Celery (task queue)
 - Redis (recomendado) — broker e opcionalmente backend de resultados do Celery
 - google.genai (SDK) para geração de texto (LLM)
-- spaCy para pré-processamento de texto
-- pdfplumber para leitura de PDFs
-- pytest, pytest-asyncio e httpx para testes
+  -- spaCy para pré-processamento de texto
+  -- pdfplumber para leitura de PDFs
 - Uvicorn para executar a aplicação ASGI
 - Docker (imagem fornecida via `Dockerfile` no repositório)
 
@@ -254,13 +253,7 @@ Para orquestrar web + worker + redis, crie um `docker-compose.yml` com serviços
 
 ## Testes
 
-- Executar a suíte de testes:
-
-```bash
-pytest -q
-```
-
-- Recomendações: os testes de integração usam `pytest-asyncio` e `httpx` para chamadas ASGI. Para evitar chamadas externas ao `google.genai` use `monkeypatch`/patch nas funções públicas (`app.services.ia.infer_async`) ou mock do cliente.
+Este repositório não inclui uma suíte de testes automatizada por padrão.
 
 ## Debug & diagnóstico de geração (GenAI)
 
