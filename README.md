@@ -251,20 +251,8 @@ docker run -e DATABASE_URL="sqlite+aiosqlite:///./dev.db" -p 8000:8000 autou-ema
 
 Para orquestrar web + worker + redis, crie um `docker-compose.yml` com serviços `web`, `worker` e `redis` (opcional, não incluído por padrão).
 
-## Testes
-
-Este repositório não inclui uma suíte de testes automatizada por padrão.
-
 ## Debug & diagnóstico de geração (GenAI)
 
 - Aumente `GENAI_MAX_OUTPUT_TOKENS` (ex.: 2056) se o modelo estiver cortando a saída.
 
 Observação: o projeto não persiste respostas brutas dos modelos em disco por motivos de segurança e privacidade. Para diagnóstico mais profundo, capture os logs do worker Celery em modo debug e compartilhe trechos relevantes (sem dados sensíveis).
-
-## Observações e boas práticas
-
-- Não coloque o `.env` no repositório. Use variáveis de ambiente em produção.
-- Em produção execute workers Celery separados do processo web e utilize Redis como broker.
-- Para evoluir: incluir uma rota para consultar o status/result de uma task pelo `task_id` (atualmente a consulta é feita através dos registros `TextEntry`).
-
----
