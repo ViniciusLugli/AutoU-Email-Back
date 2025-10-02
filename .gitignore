@@ -10,5 +10,7 @@ instance/
 *.sqlite3
 *.log
 *.db
-.github
 data/
+.sql
+logs.txt
+instructions/
