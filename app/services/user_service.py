@@ -1,4 +1,5 @@
 import asyncio
+from fastapi import HTTPException
 from app.core.security import hash_password, verify_password
 from app.crud import create_user, get_user_by_email
 from app.models import User
@@ -9,6 +10,11 @@ from app.services.auth_service import create_access_token
 
 
 async def register_user(session: AsyncSession, data: UserCreateRequest) -> User | None:
+  
+  userExist = await get_user_by_email(session, data.email)
+  if userExist:
+    raise HTTPException(status_code=400, detail="Email already registered")
+  
   hash_pw = await asyncio.to_thread(hash_password, data.password)
 
   db_user = User(
