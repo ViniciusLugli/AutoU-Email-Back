@@ -8,12 +8,12 @@ import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from app.core.constants import DATABASE_URL
+
 db_url = DATABASE_URL or context.config.get_main_option("sqlalchemy.url")
 
 if not db_url:
     raise RuntimeError("DATABASE_URL is not set. Set the DATABASE_URL environment variable or configure sqlalchemy.url in alembic.ini")
-
-from app.core.constants import DATABASE_URL
 import app.models
 from sqlmodel import SQLModel as _SQLModel
 target_metadata = _SQLModel.metadata
