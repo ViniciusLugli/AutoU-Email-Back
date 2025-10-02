@@ -1,10 +1,7 @@
 from datetime import datetime, timedelta, timezone
-from dotenv import load_dotenv
 from jose import jwt
 
 from app.core.constants import ACCESS_TOKEN_EXPIRE_MINUTES, SECRET_KEY, ALGORITHM
-
-load_dotenv()
 
 
 def _get_access_token_expire_minutes() -> int:

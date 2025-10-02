@@ -169,7 +169,7 @@ def build_prompt(text: str, username: str | None = None) -> str:
         }
     ]
 
-    username_line = f"Nome do usuario: {username}\n" if username else ""
+    username_line = f"Nome do usuário: {username}\n" if username else ""
 
     instructions = (
         "INSTRUÇÕES (OBRIGATÓRIO): Você é um assistente que analisa e classifica e-mails em duas categorias: PRODUTIVO ou IMPRODUTIVO.\n"
@@ -184,14 +184,14 @@ def build_prompt(text: str, username: str | None = None) -> str:
         "- Escreva como se fosse um colega respondendo ao remetente.\n"
         "- A resposta deve ser curta, clara e acrescentar valor (ex.: agradecer, confirmar recebimento, indicar próxima ação).\n"
         "- Use tom educado e profissional.\n"
-        "- Preserve formatação: quebras de linha (\\n, \\r), barras (\\\\), acentuação e caracteres especiais.\n\n"
+        "- Preserve/Crie formatação: quebras de linha (\\n, \\r), barras (\\\\), acentuação e caracteres especiais.\n\n"
         "Exemplo negativo (NÃO FAZER):\n"
         "Texto original: 'Finalizei o relatório e marquei reunião.'\n"
         "Resposta incorreta: 'Você finalizou o relatório e marcou reunião.' (apenas reescreve o email)\n\n"
         "Exemplo positivo (CORRETO):\n"
         "Texto original: 'Finalizei o relatório e marquei reunião.'\n"
         "Resposta correta: 'Obrigado pelo envio do relatório. Vou revisar e estarei presente na reunião.'\n"
-        "- Leia o email com atenção para descobrir quem é o remetente e use o nome do usuário para assinar a resposta.\n"
+        "- Leia o email com atenção para descobrir quem é o remetente (se houver) e use o nome do usuário para assinar a resposta (Atenciosamente, <usuário>).\n"
         "- Leia o texto do email cuidadosamente para entender o contexto e detalhes importantes.\n"
         "- Utilize os exemplos abaixo para entender o estilo e formatação da resposta desejados.\n"
     )
@@ -207,7 +207,7 @@ def build_prompt(text: str, username: str | None = None) -> str:
         ]
         ex_texts.append("\n".join(ex_lines))
 
-    prompt_parts = [instructions, "\n\n".join(ex_texts), "\nANALISE O SEGUINTE EMAIL A PARTIR DAQUI:", username_line, "\nTEXTO:\n", text]
+    prompt_parts = [instructions, username_line, "\n\n".join(ex_texts), "\nANALISE O SEGUINTE EMAIL A PARTIR DAQUI:", "\nTEXTO:\n", text]
 
     prompt = "\n\n".join([p for p in prompt_parts if p])
     return prompt
