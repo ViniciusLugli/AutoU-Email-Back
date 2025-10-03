@@ -240,6 +240,29 @@ uvicorn app.main:app --reload --port 8000
 celery -A app.services.celery.celery worker --loglevel=info
 ```
 
+Executando web + worker juntos (script `app/run.py`)
+
+O projeto inclui um pequeno utilitário `app/run.py` destinado a facilitar o desenvolvimento local quando você quer subir
+o servidor ASGI (Uvicorn) e um worker Celery no mesmo processo pai (cada um em um processo filho separado).
+
+Como funciona:
+
+- `app/run.py` cria um processo separado para executar o worker Celery via `multiprocessing.Process` e em seguida
+  inicia o Uvicorn apontando para `app.main:app`.
+- É útil para desenvolvimento local rápido, evitando que você tenha que abrir dois terminais distintos.
+
+Como usar:
+
+```bash
+python -m app.run
+```
+
+Observações importantes:
+
+- Em produção não é recomendado rodar web e worker no mesmo host/processo. Use processos separados e orquestração (systemd, docker-compose, Kubernetes, etc.).
+- O script inicia o Celery com `--concurrency=1` e `--autoscale=2,1` por padrão; ajuste conforme necessário via edição do script ou passando variáveis de ambiente.
+- Se o worker depende de serviços externos (Redis, banco), assegure que esses serviços estejam acessíveis antes de iniciar `app/run.py`.
+
 ## Rodando com Docker
 
 - Há um `Dockerfile` no repositório para criar uma imagem que execute a API com Uvicorn. Em um ambiente com Docker instalado, crie a imagem e rode:
