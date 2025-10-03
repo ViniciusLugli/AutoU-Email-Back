@@ -240,32 +240,69 @@ uvicorn app.main:app --reload --port 8000
 celery -A app.services.celery.celery worker --loglevel=info
 ```
 
-Executando web + worker juntos (script `app/run.py`)
+Executando web + worker juntos (script `app.py`)
 
-O projeto inclui um pequeno utilitário `app/run.py` destinado a facilitar o desenvolvimento local quando você quer subir
+O projeto inclui um pequeno utilitário `app.py` destinado a facilitar o desenvolvimento local quando você quer subir
 o servidor ASGI (Uvicorn) e um worker Celery no mesmo processo pai (cada um em um processo filho separado).
 
 Como funciona:
 
-- `app/run.py` cria um processo separado para executar o worker Celery via `multiprocessing.Process` e em seguida
+- `app.py` cria um processo separado para executar o worker Celery via `multiprocessing.Process` e em seguida
   inicia o Uvicorn apontando para `app.main:app`.
 - É útil para desenvolvimento local rápido, evitando que você tenha que abrir dois terminais distintos.
 
 Como usar:
 
 ```bash
-python -m app.run
+python app.py
 ```
 
 Observações importantes:
 
 - Em produção não é recomendado rodar web e worker no mesmo host/processo. Use processos separados e orquestração (systemd, docker-compose, Kubernetes, etc.).
 - O script inicia o Celery com `--concurrency=1` e `--autoscale=2,1` por padrão; ajuste conforme necessário via edição do script ou passando variáveis de ambiente.
-- Se o worker depende de serviços externos (Redis, banco), assegure que esses serviços estejam acessíveis antes de iniciar `app/run.py`.
+- Se o worker depende de serviços externos (Redis, banco), assegure que esses serviços estejam acessíveis antes de iniciar `app.py`.
 
 ## Rodando com Docker
 
-- Há um `Dockerfile` no repositório para criar uma imagem que execute a API com Uvicorn. Em um ambiente com Docker instalado, crie a imagem e rode:
+- Crie um `Dockerfile` no repositório para criar uma imagem que execute a API com Uvicorn.
+
+```dockerfile
+FROM python:3.13-slim
+
+LABEL maintainer="ViniciusLugli <vinicius@example.com>"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_VIRTUALENVS_CREATE=false
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+       libpoppler-cpp-dev \
+       poppler-utils \
+       gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /app/requirements.txt
+
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY ./app /app/app
+COPY alembic.ini /app/alembic.ini
+COPY alembic /app/alembic
+
+RUN useradd --create-home appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+
+CMD ["python", "app.py"]
+```
+
+Em um ambiente com Docker instalado, crie a imagem e rode:
 
 ```bash
 docker build -t autou-email-back .
