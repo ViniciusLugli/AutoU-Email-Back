@@ -1,4 +1,3 @@
-# run.py
 import os
 from multiprocessing import Process
 import uvicorn
